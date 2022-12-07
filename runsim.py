@@ -1,76 +1,207 @@
-from main import run_simulation, Stats
+import main
 import numpy as np
+import randomize
+import stats
+import math
 
-# Constants
-NUM_OF_PATIENTS = 20
-SAMPLES = 20
-SIM_TIME = 1000
-SEEDS = np.random.default_rng().integers(low=0, high=10000, size=SAMPLES)
-results_3p4r = [run_simulation(3, 1, 4, SIM_TIME, seed) for seed in SEEDS]
-results_3p5r = [run_simulation(3, 1, 5, SIM_TIME, seed) for seed in SEEDS]
-results_4p5r = [run_simulation(4, 1, 5, SIM_TIME, seed) for seed in SEEDS]
-results_3p4r_noTwist = [run_simulation(3, 1, 4, SIM_TIME, seed, False) for seed in SEEDS]
-results_3p5r_noTwist = [run_simulation(3, 1, 5, SIM_TIME, seed, False) for seed in SEEDS]
-results_4p5r_noTwist = [run_simulation(4, 1, 5, SIM_TIME, seed, False) for seed in SEEDS]
+"""
+Experiments:
+    interarrival_time   prep_time   rec_time    prep_rooms  rec_rooms
+1.      exp(25)          exp(40)     exp(40)        4           5
+2.      exp(25)        unif(30,50) unif(30, 50)     4           5
+3.    unif(20,30)        exp(40)     exp(40)        4           5
+4.    unif(20,30)      unif(30, 50) unif(30, 50)    4           5
+5.     exp(22.5)         exp(40)     exp(40)        4           5
+6.     exp(22.5)       unif(30, 50) unif(30, 50)    4           5
+7.    unif(20, 25)       exp(40)     exp(40)        4           5
+8.    unif(20, 25)     unif(30, 50) unif(30, 50)    4           5
+"""
 
-class ValuesOfInterest:
-    mean: float
-    conf_ival_95_size: float
+SIM_LENGTH= 1_000
 
-    def __init__(self, mean, conf_ival_95_size):
-        self.mean = mean
-        self.conf_ival_95_size = conf_ival_95_size
+sims = [
+    # 1.      exp(25)          exp(40)     exp(40)
+    {
+        "interarrival_t": {
+            "exp": True,
+            "val": 25
+        },
+        "prep_t": {
+            "exp": True,
+            "val": 40
+        },
+        "rec_t": {
+            "exp": True,
+            "val": 40
+        }
+    },
+    # 2.      exp(25)        unif(30,50) unif(30, 50)
+    {
+        "interarrival_t": {
+            "exp": True,
+            "val": 25
+        },
+        "prep_t": {
+            "exp": False,
+            "val": [30, 50]
+        },
+        "rec_t": {
+            "exp": False,
+            "val": [30, 50]
+        }
+    },
+    # 3.    unif(20,30)        exp(40)     exp(40)
+    {
+        "interarrival_t": {
+            "exp": False,
+            "val": [20, 30]
+        },
+        "prep_t": {
+            "exp": True,
+            "val": 40
+        },
+        "rec_t": {
+            "exp": True,
+            "val": 40
+        }
+    },
+    # 4.    unif(20,30)      unif(30, 50) unif(30, 50)    4           5
+    {
+        "interarrival_t": {
+            "exp": False,
+            "val": [20, 30]
+        },
+        "prep_t": {
+            "exp": False,
+            "val": [30, 50]
+        },
+        "rec_t": {
+            "exp": False,
+            "val": [30, 50]
+        }
+    },
+    # 5.     exp(22.5)         exp(40)     exp(40)        4           5
+    {
+        "interarrival_t": {
+            "exp": True,
+            "val": 22.5
+        },
+        "prep_t": {
+            "exp": True,
+            "val": 40
+        },
+        "rec_t": {
+            "exp": True,
+            "val": 40
+        }
+    },
+    # 6.     exp(22.5)       unif(30, 50) unif(30, 50)    4           5
+    {
+        "interarrival_t": {
+            "exp": True,
+            "val": 22.5
+        },
+        "prep_t": {
+            "exp": False,
+            "val": [30, 50]
+        },
+        "rec_t": {
+            "exp": False,
+            "val": [30, 50]
+        }
+    },
+    # 7.    unif(20, 25)       exp(40)     exp(40)        4           5
+    {
+        "interarrival_t": {
+            "exp": False,
+            "val": [20, 25]
+        },
+        "prep_t": {
+            "exp": True,
+            "val": 40
+        },
+        "rec_t": {
+            "exp": True,
+            "val": 40
+        }
+    },
+    # 8.    unif(20, 25)     unif(30, 50) unif(30, 50)    4           5
+    {
+        "interarrival_t": {
+            "exp": False,
+            "val": [20, 25]
+        },
+        "prep_t": {
+            "exp": False,
+            "val": [30, 50]
+        },
+        "rec_t": {
+            "exp": False,
+            "val": [30, 50]
+        }
+    },
+]
 
-    def print(self):
-        print(f"\tmean: {self.mean}")
-        conf_min = self.mean - self.conf_ival_95_size
-        conf_max = self.mean + self.conf_ival_95_size
-        print(f"\t95% confidence interval: [{conf_min}, {conf_max}]")
+experiments = []
 
-def values(arr):
-  mean = sum(arr) / SAMPLES
-  # Copied straight from sample solutions
-  variance = sum([(p - mean) ** 2 for p in arr]) / (SAMPLES - 1)
-  std_deviation = sqrt(variance)
-  c = 2.093
+for i, sim in enumerate(sims):
+    experiment = []
+    for k in range(1, 11):
+        if sim["interarrival_t"]["exp"]:
+            interarrival_time = randomize.exponential(sim["interarrival_t"]["val"])
+        else:
+            interarrival_time = randomize.unif(sim["interarrival_t"]["val"])
 
-  return ValuesOfInterest(
-    mean=mean,
-    conf_ival_95_size=c * std_deviation / sqrt(SAMPLES)
-  )
+        if sim["prep_t"]["exp"]:
+            prep_time = randomize.exponential(sim["prep_t"]["val"])
+        else:
+            prep_time = randomize.unif(sim["prep_t"]["val"])
 
-def analyze(samples):
-    print("Probability of all recovery rooms being full:")
-    values(
-        [s.time_all_recovery_rooms_full / SIM_TIME for s in samples]
-    ).print()
-    print("Average queue length before preparation:")
-    values(
-        [s.prep_room_queue_length_total / SIM_TIME for s in samples]
-    ).print()
+        if sim["rec_t"]["exp"]:
+            rec_time = randomize.exponential(sim["rec_t"]["val"])
+        else:
+            rec_time = randomize.unif(sim["rec_t"]["val"])
 
-def analyze_diffs(s_from, s_to):
-    """Run `analyze` for the difference between two stats instances."""
-    analyze([s2.difference_from(s1) for s1, s2 in zip(s_from, s_to)])
+        result = main.run_simulation(3, 1, 5, SIM_LENGTH, k, interarrival_time, prep_time, rec_time, False)
+        experiment = experiment + [result.prep_queue_arr]
 
-print("individual cases:")
-print("\n3p4r")
-analyze(results_3p4r)
-print("\n3p5r")
-analyze(results_3p5r)
-print("\n4p5r")
-analyze(results_4p5r)
-print("\npairwise differences:")
-print("\nfrom 3p4r to 3p5r:")
-analyze_diffs(results_3p4r, results_3p5r)
-print("\nfrom 3p4r to 4p5r:")
-analyze_diffs(results_3p4r, results_4p5r)
-print("\nfrom 3p5r to 4p5r:")
-analyze_diffs(results_3p5r, results_4p5r)
-print("\ndifferences between twisted and untwisted versions:")
-print("\n3p4r")
-analyze_diffs(results_3p4r, results_3p4r_noTwist)
-print("\n3p5r")
-analyze_diffs(results_3p5r, results_3p5r_noTwist)
-print("\n4p5r")
-analyze_diffs(results_4p5r, results_4p5r_noTwist)
+    experiments = experiments + [experiment]
+
+#TODO: safeguard against going over simulation limits with sample or interval sizes
+sampleLength = 50
+sampleCount = 10
+interval = 50
+for simulationSet in experiments:
+    for experiment in simulationSet:
+        sampleList = []
+        for i in range(0,sampleCount):
+            sampleList = sampleList + [experiment[0+i*2*interval:sampleLength+i*2*sampleLength]]
+
+        sampleMeans = []
+        for i in range(0,sampleCount):
+            sampleMeans = sampleMeans + [stats.mean(sampleList[i])]
+
+        covariances = []
+        for i in range(1, sampleCount):
+            covariance = 0
+            X1 = sampleList[i-1]  #list of values in the first sample
+            X2 = sampleList[i]    #list of values in the second sample
+            u1 = sampleMeans[i-1] #mean of the first sample
+            u2 = sampleMeans[i]   #mean of the second sample
+            for index in range(0,sampleLength):
+                covariance += ((X1[index] - u1)*(X2[index] - u2)) / sampleLength
+            covariances = covariances + [covariance]
+
+        correlations = []
+        for i in range(1,sampleCount):
+            X1_variance = stats.variance(sampleList[i-1])
+            X2_variance = stats.variance(sampleList[i])
+            try:
+                correlation = covariances[i-1]/math.sqrt(X1_variance*X2_variance)
+                correlations = correlations + [correlation]
+            except:
+                correlations = correlations + [0]        
+
+        print("Correlations:")
+        print("------------")
+        print(correlations)

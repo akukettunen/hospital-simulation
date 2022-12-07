@@ -9,6 +9,7 @@ class Stats:
     dead_patients = 0
     time_all_recovery_rooms_full = 0
     prep_room_queue_length_total = 0
+    prep_queue_arr = []
     patient_lifetime_total = 0
 
     def difference_from(self, other):
@@ -24,6 +25,7 @@ class Stats:
         diff.prep_room_queue_length_total = (
             self.prep_room_queue_length_total - other.prep_room_queue_length_total
         )
+
         return diff
 
 def run_simulation(
@@ -32,6 +34,9 @@ def run_simulation(
         reco_capacity,
         run_time,
         seed,
+        interarrival_t,
+        prep_t,
+        rec_t,
         twist = True
     ):
     env = simpy.Environment()
@@ -45,20 +50,18 @@ def run_simulation(
     # for t in range(1, run_time):
         # env.run(until=t)
 
-        # Collect stats
-    stats.prep_room_queue_length_total += len(prep_rooms.queue)
-
-    if reco_rooms.count == reco_rooms.capacity:
-        stats.time_all_recovery_rooms_full += 1
-
-    def patient(env, prep_rooms, operating_rooms, recovery_rooms, stats):
+    def patient(env, prep_rooms, operating_rooms, recovery_rooms, stats, prep_t, rec_t):
         def prep_dur():
+            if prep_t: 
+                return prep_t
             return rng.exponential(scale=40)
         
         def oper_dur():
             return rng.exponential(scale=20)
         
         def reco_dur():
+            if rec_t:
+                return rec_t
             return rng.exponential(scale=40)
         
         def death_dur():
@@ -100,11 +103,14 @@ def run_simulation(
     
     def patient_flow(env, prep_rooms, operating_rooms, recovery_rooms, stats):
         def inter_arrival_delay():
+            if interarrival_t:
+                return interarrival_t
+
             scale = 25
             return rng.exponential(scale=scale)
 
         while True:
-            env.process( patient(env, prep_rooms, operating_rooms, recovery_rooms, stats) )
+            env.process( patient(env, prep_rooms, operating_rooms, recovery_rooms, stats, prep_t, rec_t) )
             yield env.timeout(inter_arrival_delay())
 
     env.process(patient_flow(env, prep_rooms, oper_rooms, reco_rooms, stats))
@@ -114,24 +120,12 @@ def run_simulation(
         env.run(until=t)
 
         stats.prep_room_queue_length_total += len(prep_rooms.queue)
+        stats.prep_queue_arr.append(len(prep_rooms.queue))
 
         if reco_rooms.count == reco_rooms.capacity:
             stats.time_all_recovery_rooms_full += 1
 
     return stats
-
-
-# Constants
-NUM_OF_PATIENTS = 20
-SAMPLES = 20
-SIM_TIME = 1000
-SEEDS = np.random.default_rng().integers(low=0, high=10000, size=SAMPLES)
-results_3p4r = [run_simulation(3, 1, 4, SIM_TIME, seed) for seed in SEEDS]
-results_3p5r = [run_simulation(3, 1, 5, SIM_TIME, seed) for seed in SEEDS]
-results_4p5r = [run_simulation(4, 1, 5, SIM_TIME, seed) for seed in SEEDS]
-results_3p4r_noTwist = [run_simulation(3, 1, 4, SIM_TIME, seed, False) for seed in SEEDS]
-results_3p5r_noTwist = [run_simulation(3, 1, 5, SIM_TIME, seed, False) for seed in SEEDS]
-results_4p5r_noTwist = [run_simulation(4, 1, 5, SIM_TIME, seed, False) for seed in SEEDS]
 
 class ValuesOfInterest:
     mean: float
@@ -172,25 +166,3 @@ def analyze(samples):
 def analyze_diffs(s_from, s_to):
     """Run `analyze` for the difference between two stats instances."""
     analyze([s2.difference_from(s1) for s1, s2 in zip(s_from, s_to)])
-
-print("individual cases:")
-print("\n3p4r")
-analyze(results_3p4r)
-print("\n3p5r")
-analyze(results_3p5r)
-print("\n4p5r")
-analyze(results_4p5r)
-print("\npairwise differences:")
-print("\nfrom 3p4r to 3p5r:")
-analyze_diffs(results_3p4r, results_3p5r)
-print("\nfrom 3p4r to 4p5r:")
-analyze_diffs(results_3p4r, results_4p5r)
-print("\nfrom 3p5r to 4p5r:")
-analyze_diffs(results_3p5r, results_4p5r)
-print("\ndifferences between twisted and untwisted versions:")
-print("\n3p4r")
-analyze_diffs(results_3p4r, results_3p4r_noTwist)
-print("\n3p5r")
-analyze_diffs(results_3p5r, results_3p5r_noTwist)
-print("\n4p5r")
-analyze_diffs(results_4p5r, results_4p5r_noTwist)

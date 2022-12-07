@@ -9,8 +9,8 @@ def exponential(mean):
     return random.expovariate(lambd)
 
 # returns the uniformly distributed random number of desired range
-def unif(a, b):
-    return random.uniform(a,b)
+def unif(arr):
+    return random.uniform(arr[0], arr[1])
 
 
 
